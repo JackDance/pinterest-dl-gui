@@ -2,10 +2,20 @@ import json
 import platform
 import subprocess
 import time
+import os
 from pathlib import Path
 
 import streamlit as st
 from pinterest_dl import PinterestDL
+
+# 添加HEIC支持
+try:
+    import pillow_heif
+    pillow_heif.register_heif_opener()
+    HEIC_SUPPORTED = True
+except ImportError:
+    HEIC_SUPPORTED = False
+    print("Warning: pillow-heif not installed. HEIC files will be filtered out.")
 
 # ========================== Configuration Section ==========================
 VERSION = "0.2.3"
@@ -16,6 +26,8 @@ MODE_OPTIONS = {
 COOKIES_PATH = Path("cookies/cookies.json")
 COOKIES_PATH.parent.mkdir(parents=True, exist_ok=True)
 
+# HEIC文件扩展名列表
+HEIC_EXTENSIONS = ['.heic', '.HEIC', '.heif', '.HEIF']
 
 # ========================== Util Section ==========================
 def open_directory(path):
@@ -196,6 +208,39 @@ def footer():
 
 
 # ========================== Scraper Functions Section ==========================
+def filter_heic_files(directory):
+    """Remove HEIC files from the downloaded directory if HEIC is not supported."""
+    if HEIC_SUPPORTED:
+        # 如果支持HEIC，不需要删除文件
+        return 0
+        
+    removed_count = 0
+    
+    for file_path in Path(directory).rglob('*'):
+        if file_path.is_file() and file_path.suffix in HEIC_EXTENSIONS:
+            try:
+                file_path.unlink()
+                removed_count += 1
+                print(f"Removed HEIC file: {file_path}")
+            except Exception as e:
+                print(f"Failed to remove {file_path}: {e}")
+    
+    if removed_count > 0:
+        print(f"Removed {removed_count} HEIC files from {directory}")
+    
+    return removed_count
+
+
+def is_heic_url(url):
+    """Check if the URL points to a HEIC file."""
+    if not url:
+        return False
+    
+    # 检查URL路径中的文件扩展名
+    url_lower = url.lower()
+    return any(ext.lower() in url_lower for ext in HEIC_EXTENSIONS)
+
+
 def download_cookies(email, password, after_sec, headless, incognito, driver):
     """Perform login and save cookies."""
     cookies = (
@@ -233,17 +278,38 @@ def scrape_images(
             return
         api_instance = api_instance.with_cookies_path(COOKIES_PATH)
 
-    api_instance.scrape_and_download(
-        url=url,
-        output_dir=project_dir,
-        num=limit,
-        min_resolution=(res_x, res_y),
-        cache_path=cache_filename,
-        delay=delay,
-        caption=caption,
-    )
-    msg.success("Scrape Complete!")
-    print("Done.")
+    try:
+        api_instance.scrape_and_download(
+            url=url,
+            output_dir=project_dir,
+            num=limit,
+            min_resolution=(res_x, res_y),
+            cache_path=cache_filename,
+            delay=delay,
+            caption=caption,
+        )
+        
+        # Filter out HEIC files after download
+        removed_count = filter_heic_files(project_dir)
+        if removed_count > 0:
+            msg.info(f"Removed {removed_count} HEIC files from download directory.")
+        
+        msg.success("Scrape Complete!")
+        print("Done.")
+        
+    except Exception as e:
+        error_msg = str(e)
+        if "UnidentifiedImageError" in error_msg and "heic" in error_msg.lower():
+            # 如果是HEIC文件错误，尝试删除该文件并继续
+            msg.warning("Encountered HEIC file error. Attempting to clean up...")
+            removed_count = filter_heic_files(project_dir)
+            if removed_count > 0:
+                msg.info(f"Removed {removed_count} HEIC files. Please try downloading again.")
+            else:
+                msg.error("Failed to process HEIC files. Please try again.")
+        else:
+            msg.error(f"Download failed: {error_msg}")
+        print(f"Error: {error_msg}")
 
 
 def search_images(
@@ -272,17 +338,38 @@ def search_images(
             return
         api_instance = api_instance.with_cookies_path(COOKIES_PATH)
 
-    api_instance.search_and_download(
-        query=query,
-        output_dir=project_dir,
-        num=limit,
-        min_resolution=(res_x, res_y),
-        cache_path=cache_filename,
-        delay=delay,
-        caption=caption,
-    )
-    msg.success("Scrape Complete!")
-    print("Done.")
+    try:
+        api_instance.search_and_download(
+            query=query,
+            output_dir=project_dir,
+            num=limit,
+            min_resolution=(res_x, res_y),
+            cache_path=cache_filename,
+            delay=delay,
+            caption=caption,
+        )
+        
+        # Filter out HEIC files after download
+        removed_count = filter_heic_files(project_dir)
+        if removed_count > 0:
+            msg.info(f"Removed {removed_count} HEIC files from download directory.")
+        
+        msg.success("Scrape Complete!")
+        print("Done.")
+        
+    except Exception as e:
+        error_msg = str(e)
+        if "UnidentifiedImageError" in error_msg and "heic" in error_msg.lower():
+            # 如果是HEIC文件错误，尝试删除该文件并继续
+            msg.warning("Encountered HEIC file error. Attempting to clean up...")
+            removed_count = filter_heic_files(project_dir)
+            if removed_count > 0:
+                msg.info(f"Removed {removed_count} HEIC files. Please try downloading again.")
+            else:
+                msg.error("Failed to process HEIC files. Please try again.")
+        else:
+            msg.error(f"Download failed: {error_msg}")
+        print(f"Error: {error_msg}")
 
 
 # ========================== Main Application Section ==========================

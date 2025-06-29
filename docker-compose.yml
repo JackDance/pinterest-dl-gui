@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  pinterest-dl-gui:
+    build: .
+    container_name: pinterest-dl-gui
+    ports:
+      - "13100:13100"
+    volumes:
+      - ./downloads:/app/downloads
+      - ./cookies:/app/cookies
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      - STREAMLIT_SERVER_PORT=13100
+      - STREAMLIT_SERVER_ADDRESS=0.0.0.0
+      - STREAMLIT_SERVER_HEADLESS=true
+      - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false 
